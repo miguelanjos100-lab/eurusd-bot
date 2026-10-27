@@ -3,16 +3,22 @@ import pandas as pd
 import yfinance as yf
 import requests
 
-# Configuração do Telegram com os teus dados integrados
+# Configuração do Telegram
 TELEGRAM_TOKEN = "7953258509:AAHgWz1X5J6G0N-0E6F0v8n5s8Z1x2C3v4B"
 CHAT_ID = "2124288803"
 
-st.set_page_config(page_title="Cyborg Quant - EUR/USD Dashboard", layout="centered")
+st.set_page_config(page_title="Cyborg Quant - Multi-Market Dashboard", layout="centered")
 
-st.title("🤖 Cyborg Quant Daemon - EUR/USD Control Panel")
-st.write("Clica no botão abaixo para atualizar os dados de mercado, cruzar o filtro macro com o varrimento de liquidez e enviar o sinal para o Telegram.")
+st.title("🤖 Cyborg Quant Daemon - Multi-Market Control Panel")
+st.write("Seleciona o ativo pretendido e clica no botão para executar a análise e enviar alertas para o Telegram.")
 
-def get_macro_bias(ticker="EURUSD=X"):
+# Seletor de Mercados
+selected_ticker = st.selectbox(
+    "Escolhe o Ativo para Análise:",
+    ("EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "GC=F")
+)
+
+def get_macro_bias(ticker):
     try:
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         if df.empty:
@@ -36,17 +42,17 @@ def get_macro_bias(ticker="EURUSD=X"):
         st.error(f"Erro no filtro macro: {e}")
         return 0, 0, 0, 0
 
-if st.button("🚀 Executar Análise e Verificar Sinais EUR/USD", type="primary"):
-    with st.spinner("A descarregar dados na nuvem e a calcular matrizes de liquidez..."):
-        bias, price, e50, e200 = get_macro_bias("EURUSD=X")
+if st.button(f"🚀 Executar Análise para {selected_ticker}", type="primary"):
+    with st.spinner(f"A descarregar dados na nuvem para {selected_ticker}..."):
+        bias, price, e50, e200 = get_macro_bias(selected_ticker)
         bias_label = "BULLISH (ESTRUTURA DE COMPRA)" if bias == 1 else ("BEARISH (ESTRUTURA DE VENDA)" if bias == -1 else "NEUTRO / LATERAL")
         
-        st.subheader("📊 Estado Atual do Mercado")
-        st.metric(label="Preço Atual EUR/USD", value=f"{price:.5f}")
+        st.subheader(f"📊 Estado Atual - {selected_ticker}")
+        st.metric(label=f"Preço Atual ({selected_ticker})", value=f"{price:.5f}")
         st.write(f"**Viés Macro Diário:** {bias_label}")
         st.write(f"*(Referência: EMA50 = {e50:.5f} | EMA200 = {e200:.5f})*")
 
-        df = yf.download("EURUSD=X", period="5d", interval="30m", progress=False)
+        df = yf.download(selected_ticker, period="5d", interval="30m", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df = df.droplevel(1, axis=1)
             
@@ -57,32 +63,32 @@ if st.button("🚀 Executar Análise e Verificar Sinais EUR/USD", type="primary"
         last_high = float(recent_candles['High'].iloc[-1])
         last_low = float(recent_candles['Low'].iloc[-1])
 
-        st.info(f"📍 **Níveis da Sessão:** Máx. Asiático: `{asia_high:.5f}` | Mín. Asiático: `{asia_low:.5f}`")
+        st.info(f"📍 **Níveis da Sessão:** Máx. Referência: `{asia_high:.5f}` | Mín. Referência: `{asia_low:.5f}`")
 
         signal_message = None
         if last_high > asia_high and last_close < asia_high and bias == -1:
             signal_message = (
                 f"🚨 *[CYBORG QUANT ALERT]* 🚨\n\n"
-                f"*Ativo:* EUR/USD\n"
+                f"*Ativo:* {selected_ticker}\n"
                 f"*Direção:* **SHORT (Venda)**\n"
                 f"*Filtro Macro:* Bearish (Alinhado)\n"
                 f"*Gatilho:* Varrimento de liquidez acima do máximo ({asia_high:.5f}) com rejeição.\n"
                 f"*Preço de Fecho:* {last_close:.5f}"
             )
-            st.warning("⚠️ **Setup SHORT Detetado e Alerta Disparado!**")
+            st.warning(f"⚠️ **Setup SHORT Detetado em {selected_ticker}! Alerta Disparado!**")
             
         elif last_low < asia_low and last_close > asia_low and bias == 1:
             signal_message = (
                 f"🚨 *[CYBORG QUANT ALERT]* 🚨\n\n"
-                f"*Ativo:* EUR/USD\n"
+                f"*Ativo:* {selected_ticker}\n"
                 f"*Direção:* **LONG (Compra)**\n"
                 f"*Filtro Macro:* Bullish (Alinhado)\n"
                 f"*Gatilho:* Varrimento de liquidez abaixo do mínimo ({asia_low:.5f}) com rejeição.\n"
                 f"*Preço de Fecho:* {last_close:.5f}"
             )
-            st.success("✅ **Setup LONG Detetado e Alerta Disparado!**")
+            st.success(f"✅ **Setup LONG Detetado em {selected_ticker}! Alerta Disparado!**")
         else:
-            st.write("ℹ️ *Sem padrões de varrimento válidos ou alinhados com o macro neste momento. O mercado mantém-se em digestão.*")
+            st.write("ℹ️ *Sem padrões de varrimento válidos ou alinhados com o macro neste momento para este ativo.*")
 
         if signal_message:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -95,3 +101,4 @@ if st.button("🚀 Executar Análise e Verificar Sinais EUR/USD", type="primary"
                     st.error(f"Erro ao enviar para o Telegram: {res.text}")
             except Exception as ex:
                 st.error(f"Erro de rede ao contactar o Telegram: {ex}")
+      
